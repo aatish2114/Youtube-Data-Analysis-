@@ -1,0 +1,232 @@
+---
+title: "Youtube Streamers Analysis"
+author: "Aatish"
+date: "2023-12-16"
+output: html_document
+---
+### Aim:
+To Perform a comprehensive analysis of the dataset to extract insights about the top YouTube content creators.
+
+Install & load required Libraries
+```{r message=FALSE, warning=FALSE}
+install.packages("tidyverse",repos="https://cloud.r-project.org/")
+library(tidyverse)
+install.packages("skimr",repos="https://cloud.r-project.org/")
+library(skimr)
+install.packages("ggcorrplot",repos="https://cloud.r-project.org/")
+library(ggcorrplot)
+install.packages("googledrive",repos="https://cloud.r-project.org/")
+library(googledrive)
+```
+Load Dataset from Google Drive
+```{r fig.width=14, message=FALSE, warning=FALSE}
+mydrive <- drive_find(n_max = 10) #this will direct your gdrive browser for permission
+id <- "1TRPPHAA2nn2NtpHn5GZaxKYVKzj27jQ5"
+youtube_df <- read.csv(paste0("https://drive.google.com/uc?id=",id,
+                              "&export=download"),na.strings = c(""))
+as_tibble(head(youtube_df,10))
+```
+### Data Exploration
+```{r fig.width=14}
+skim_without_charts(youtube_df)
+```
+As we can see there are only 994 distinct values in dataset so remove duplicate rows
+```{r}
+youtube_df <- youtube_df[!duplicated(youtube_df$Username),]
+```
+Check for Missing Values
+```{r fig.width=14}
+colSums(is.na(youtube_df))
+```
+Replace missing values with **Entertainment**
+```{r}
+youtube_df$Categories <- youtube_df$Categories %>%
+  replace_na('Entertainment')
+```
+Check Missing values
+```{r}
+colSums(is.na(youtube_df))
+```
+Rename Column name to **Subscribers**
+```{r}
+youtube_df <- rename(youtube_df, Subscribers = Suscribers)
+```
+
+```{r}
+top100_categories <- head(youtube_df,100)
+top100 <- top100_categories%>%
+  group_by(Categories)%>%
+  summarise(no_of_streamer = n())%>%
+  arrange(-no_of_streamer)
+print(top100)
+```
+## Trend Analysis
+```{r}
+ggplot(data = top100, aes(no_of_streamer,reorder(Categories,no_of_streamer)))+
+  geom_col(fill="purple")+
+  labs(title = "Top Categories Among Top Streamers",caption="Taking Top 100 Streamers",x="No. of Streamer",y="Categories")
+```
+```{r fig.height=4, fig.width=6}
+#Creating Correlation Matrix
+new_youtube_df <- top100_categories %>%
+  group_by(Categories) %>%
+  summarise(Total_Subscribers = sum(Subscribers), Total_Likes = sum(Likes),
+            Total_Comments = sum(Comments), Total_Visits = sum(Visits))%>%
+  arrange(-Total_Subscribers)
+cor_matrix <- cor(new_youtube_df[sapply(new_youtube_df,is.numeric)])
+print(cor_matrix)
+
+#Creating a heatmap to visually understand the structure
+ggcorrplot(cor_matrix, method = "square",lab = TRUE)
+```
+
+
+
+
+## Audience Study
+```{r}
+#Analyse the distribution of streamers audience by country and Group the data by country & content category
+country_categories <- youtube_df %>%
+  group_by(Country,Categories)%>%
+  summarise(Total_visits = sum(Visits), Total_Likes = sum(Likes),
+            Total_Subscibers = sum(Subscribers),.groups = "drop")
+```
+```{r fig.height=8, fig.width=14}
+#Create a scatterplot to visualize the distribution of content categories by country
+ggplot(data = country_categories)+
+  geom_point(aes(Categories,Country))+
+  theme(axis.text.x = element_text(angle = 90))+
+  labs(title = "Distribution of Content Categories by Country",x="Categories",
+       y="Country")
+```
+
+
+## Performance Metrics
+```{r}
+#Calculate average metrics
+avg_matrices <- youtube_df %>%
+  group_by(Categories) %>%
+  summarise(Avg_Subscribers = mean(Subscribers), Avg_Likes = mean(Likes),
+            Avg_Comments = mean(Comments), Avg_Visits = mean(Visits))
+```
+```{r fig.height=4, fig.width=6}
+#Checking pattern & anomalies
+avg_cor <- cor(avg_matrices[sapply(avg_matrices,is.numeric)])
+round(avg_cor,2)
+ggcorrplot(avg_cor,method = "square",lab = TRUE,title = "Performance Matrix")
+```
+```{r}
+#top10 categories by Likes
+top10_L <- head(arrange(avg_matrices,-Avg_Likes),10)
+ggplot(data = top10_L,mapping = aes(Avg_Likes,reorder(Categories,Avg_Likes)))+
+  geom_col(fill="pink")+
+  labs(title = "Top 10 Categories by Likes", x ="Avg Likes", y ="Categories")
+```
+```{r}
+ #Top10 Categories by Comments
+top10_C <- head(arrange(avg_matrices,-Avg_Comments),10)
+ggplot(data = top10_C, mapping = aes(Avg_Comments,reorder(Categories,Avg_Comments)))+
+  geom_col(fill="skyblue")+
+  labs(title = "Top 10 Categories by Comments", x ="Avg Comments", y ="Categories")
+```
+
+
+
+## Content Categories
+```{r}
+#Count number of Streamers in each category
+Content_cat <- youtube_df %>%
+  group_by(Categories)%>%
+  summarise(No_of_Streamer = n())
+arrange(Content_cat,-No_of_Streamer)
+```
+```{r fig.height=6, fig.width=14}
+#Create a horizontal bar chart to visualize the distribution of content categories
+ggplot(data = Content_cat, mapping = aes(reorder(Categories,-No_of_Streamer),No_of_Streamer))+
+  geom_col()+
+  theme(axis.text.x = element_text(angle = 90))+
+  labs(title = "Distribution of Content Categories", x ="Categories", y ="No of Streamers")
+```
+
+
+
+## Brands & Collboration
+```{r}
+#creating proxy performance matrix 
+per_matrix <- youtube_df%>%
+  mutate(Brand_collab = Likes+Comments+Visits+Subscribers)
+top10_streamer <- head(arrange(per_matrix,-Brand_collab),10)
+```
+```{r}
+ggplot(data = top10_streamer, aes(Brand_collab,reorder(Username,Brand_collab)))+
+  geom_col(fill="light green")+
+  labs(title = "Top Streamer for Brand Collaboration",x="Performance(Proxy)",
+       y="Top Streamer")
+```
+
+## Benchmarking
+```{r}
+#calculating mean values of subscribers,visits,likes & comments
+
+a <- mean(youtube_df$Subscribers)
+b <- mean(youtube_df$Visits)
+c <- mean(youtube_df$Likes)
+d <- mean(youtube_df$Comments)
+
+above_avg_streamer <- filter(youtube_df, Subscribers >a & Visits > b & Likes > c
+                             & Comments > d)
+print(select(above_avg_streamer,Username,Subscribers,Visits,Likes,Comments))
+```
+## Content Recommendation for Users
+```{r}
+#take input from user
+var1 <- readline("Search by Categories:")
+#for now take input as "Entertainment"
+var1 <- "Entertainment"
+```
+```{r message=FALSE, warning=FALSE}
+#Recommended User based on input
+for (i in 1:nrow(above_avg_streamer))
+{
+cat <- above_avg_streamer[i,3]
+if(str_detect(cat,var1))
+{
+  u_name <- above_avg_streamer[i,2]
+  print(u_name)
+}
+}
+```
+## Close Competitor among Streamers
+```{r}
+#Taking input frome user
+var <- readline("search username:")
+```
+
+```{r}
+#for now take any username 
+var <- "CoComelon"
+```
+
+```{r}
+k <- youtube_df$Username
+j <- which(k == var)
+l <- youtube_df[j,3]
+m <- youtube_df[j,4]
+filtered_data <- filter(youtube_df, Categories == l)
+num <- numeric()
+```
+
+```{r}
+for (i in 1:nrow(filtered_data)) {
+  sub <- filtered_data[i,4]
+  x <- abs(sub - m)
+  num <- c(num,x)
+}
+y <- which.min(num)
+print(paste("Close Competitor of", var, "is",(filtered_data[(y+1),2])))
+```
+
+
+
+
+
